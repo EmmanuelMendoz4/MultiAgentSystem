@@ -17,7 +17,7 @@ public class ServiceAgent extends Agent {
     protected void setup() {
         System.out.println("\nAgente " + getLocalName() + " iniciado.");
 
-        // Registrar el servicio de clasificación una sola vez
+        // Registrar el servicio de clasificación
         DFAgentDescription dfd = new DFAgentDescription();
         dfd.setName(getAID());
         ServiceDescription sd = new ServiceDescription();
@@ -25,69 +25,56 @@ public class ServiceAgent extends Agent {
         sd.setName("classification-service");
         dfd.addServices(sd);
         try {
-            // registra el agente
             DFService.register(this, dfd);
         } catch (FIPAException fe) {
             fe.printStackTrace();
         }
 
-        // Añadir comportamiento para recibir mensajes de otros agentes
+        // Añadir comportamiento cíclico para recibir solicitudes
         addBehaviour(new OfferClassificationBehaviour());
     }
 
     @Override
-    // Desregistra al agente del DF y notifica que ya no ofrece sus servicios.
     protected void takeDown() {
         try {
             DFService.deregister(this);
         } catch (FIPAException fe) {
             fe.printStackTrace();
         }
-        System.out.println("\n\n ====================== El agente " + getAID().getName() + " ya no ofrece sus servicios. ======================");
+        System.out.println("\n\nEl agente " + getAID().getName() + " ya no ofrece sus servicios.");
     }
 
-    // El comportamiento cíclico permite al agente recibir mensajes continuamente y
-    // determinar el tipo de regresión adecuado.
     private class OfferClassificationBehaviour extends CyclicBehaviour {
         @Override
         public void action() {
             ACLMessage msg = receive();
-            // recibe el mensaje y determina si no es nulo
             if (msg != null && msg.getConversationId().equals("classification-analysis")) {
-
-                // Extrae el arreglo en formato JSON
                 JSONObject json = new JSONObject(msg.getContent());
                 JSONArray yArray = json.getJSONArray("y");
-                double[] yValues = parseJsonArray(yArray);
+                double[] y = parseJsonArray(yArray);
 
-                double[] x1Values = null;
-                double[] x2Values = null;
+                double[] x1 = null;
+                double[] x2 = null;
 
-                // Verificación de regresión múltiple o simple/polinómica
-                // Y extrae los datos de los arreglos de x
                 if (json.has("x1") && json.has("x2") && json.getJSONArray("x2").length() > 0) {
-                    x1Values = parseJsonArray(json.getJSONArray("x1"));
-                    x2Values = parseJsonArray(json.getJSONArray("x2"));
+                    x1 = parseJsonArray(json.getJSONArray("x1"));
+                    x2 = parseJsonArray(json.getJSONArray("x2"));
                 } else if (json.has("x1")) {
-                    x1Values = parseJsonArray(json.getJSONArray("x1"));
+                    x1 = parseJsonArray(json.getJSONArray("x1"));
                 }
 
-                // Determinar tipo de regresión
-                String regressionType = classifyRegression(x1Values, x2Values, yValues);
+                String regressionType = classifyRegression(x1, x2, y);
 
-                // Enviar tipo de análisis recomendado
                 ACLMessage reply = msg.createReply();
                 reply.setPerformative(ACLMessage.INFORM);
                 reply.setContent(regressionType);
                 send(reply);
-
+                System.out.println("Análisis recomendado enviado: " + regressionType);
             } else {
                 block();
             }
         }
 
-        // convierte un JSONArray (arreglo en formato JSON) a un arreglo de double en
-        // Java
         private double[] parseJsonArray(JSONArray jsonArray) {
             double[] array = new double[jsonArray.length()];
             for (int i = 0; i < jsonArray.length(); i++) {
@@ -97,68 +84,190 @@ public class ServiceAgent extends Agent {
         }
     }
 
-    private String formatCorrelations(double correlationLinear, double correlationQuadratic) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Correlación lineal: ").append(correlationLinear).append("\n");
-        sb.append("Correlación cuadrática (polinomial): ").append(correlationQuadratic).append("\n");
-        return sb.toString();
-    }
+    private String classifyRegression(double[] x1, double[] x2, double[] y) {
+        if (x2 != null && x2.length > 0) {
+            double correlationX1 = calculatePearsonCorrelation(x1, y);
+            double correlationX2 = calculatePearsonCorrelation(x2, y);
 
-    private String classifyRegression(double[] x1Values, double[] x2Values, double[] yValues) {
-        // Validar datos
-        if (x1Values == null || yValues == null || x1Values.length != yValues.length) {
-            System.out.println("Datos insuficientes o mal formateados.");
-            return "Unknown Regression Type";
-        }
-    
-        if (x2Values != null && x2Values.length > 0) {
-            double correlationX1 = calculatePearsonCorrelation(x1Values, yValues);
-            double correlationX2 = calculatePearsonCorrelation(x2Values, yValues);
-    
             System.out.println("Correlaciones (Múltiple): X1=" + correlationX1 + ", X2=" + correlationX2);
-    
-            if (Math.abs(correlationX1) > 0.4 && Math.abs(correlationX2) > 0.4) {
+
+            if (Math.abs(correlationX1) > 0.7 && Math.abs(correlationX2) > 0.7) {
                 return "Multiple Linear Regression";
             }
-        } else {
-            double correlationLinear = calculatePearsonCorrelation(x1Values, yValues);
-            double[] x1Squared = Arrays.stream(x1Values).map(x -> x * x).toArray();
-            double correlationQuadratic = calculatePearsonCorrelation(x1Squared, yValues);
-    
-            System.out.println(formatCorrelations(correlationLinear, correlationQuadratic));
-    
-            if (Math.abs(correlationQuadratic) > Math.abs(correlationLinear) + 0.05) {
+        } else if (x1 != null) {
+            double r2Linear = calculateR2(x1, y, 1);
+            double r2Polynomial = calculateR2(x1, y, 2);
+
+            double mseLinear = calculateMSE(x1, y, 1);
+            double msePolynomial = calculateMSE(x1, y, 2);
+
+            System.out.println("R² Lineal: " + r2Linear);
+            System.out.println("R² Polinomial: " + r2Polynomial);
+
+            if ((r2Polynomial - r2Linear > 0.02) && (msePolynomial < mseLinear)) {
                 return "Polynomial Regression";
-            } else if (Math.abs(correlationLinear) > 0.6) {
+            } else if (r2Linear > 0.85) {
                 return "Simple Linear Regression";
             }
         }
-    
-        return "Unknown Regression Type";
-    }    
-    
+
+        return "Regresion no encontrada";
+    }
 
     private double calculatePearsonCorrelation(double[] x, double[] y) {
-        // calcula el promedio de los elementos x y y
-        double meanX = Arrays.stream(x).average().orElse(0);
+        int n = x.length;
+        double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+
+        for (int i = 0; i < n; i++) {
+            sumX += x[i];
+            sumY += y[i];
+            sumXY += x[i] * y[i];
+            sumX2 += x[i] * x[i];
+            sumY2 += y[i] * y[i];
+        }
+
+        double numerator = n * sumXY - sumX * sumY;
+        double denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+
+        return denominator == 0 ? 0 : numerator / denominator;
+    }
+
+    private double calculateR2(double[] x, double[] y, int degree) {
+        double[] coefficients = fitRegression(x, y, degree);
         double meanY = Arrays.stream(y).average().orElse(0);
+        double totalSS = 0.0;
+        double residualSS = 0.0;
 
-        double numerator = 0.0;
-        double denominatorX = 0.0;
-        double denominatorY = 0.0;
-
-        // Realiza las sumatorias respectivas
         for (int i = 0; i < x.length; i++) {
-            numerator += (x[i] - meanX) * (y[i] - meanY);
-            denominatorX += Math.pow(x[i] - meanX, 2);
-            denominatorY += Math.pow(y[i] - meanY, 2);
+            double prediction = coefficients[0];
+            for (int j = 1; j <= degree; j++) {
+                prediction += coefficients[j] * Math.pow(x[i], j);
+            }
+            totalSS += Math.pow(y[i] - meanY, 2);
+            residualSS += Math.pow(y[i] - prediction, 2);
         }
 
-        // Evitar la división por cero
-        if (denominatorX == 0 || denominatorY == 0) {
-            return 0;
+        return 1 - (residualSS / totalSS);
+    }
+
+    private double calculateMSE(double[] x, double[] y, int degree) {
+        double[] coefficients = fitRegression(x, y, degree);
+        double mse = 0.0;
+
+        for (int i = 0; i < x.length; i++) {
+            double prediction = coefficients[0];
+            for (int j = 1; j <= degree; j++) {
+                prediction += coefficients[j] * Math.pow(x[i], j);
+            }
+            mse += Math.pow(y[i] - prediction, 2);
         }
 
-        return numerator / Math.sqrt(denominatorX * denominatorY);
+        return mse / x.length;
+    }
+
+    private double[] fitRegression(double[] x, double[] y, int degree) {
+        int n = x.length;
+        double[][] matrix = new double[n][degree + 1];
+
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j <= degree; j++) {
+                matrix[i][j] = Math.pow(x[i], j);
+            }
+        }
+
+        double[][] xtx = multiplyMatrices(transposeMatrix(matrix), matrix);
+        double[] xty = multiplyMatrixVector(transposeMatrix(matrix), y);
+        double[][] xtxInverse = invertMatrix(xtx);
+
+        return multiplyMatrixVector(xtxInverse, xty);
+    }
+
+    private double[][] transposeMatrix(double[][] matrix) {
+        int rows = matrix.length;
+        int cols = matrix[0].length;
+        double[][] transposed = new double[cols][rows];
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                transposed[j][i] = matrix[i][j];
+            }
+        }
+        return transposed;
+    }
+
+    private double[][] multiplyMatrices(double[][] a, double[][] b) {
+        int rowsA = a.length;
+        int colsA = a[0].length;
+        int colsB = b[0].length;
+        double[][] result = new double[rowsA][colsB];
+
+        for (int i = 0; i < rowsA; i++) {
+            for (int j = 0; j < colsB; j++) {
+                for (int k = 0; k < colsA; k++) {
+                    result[i][j] += a[i][k] * b[k][j];
+                }
+            }
+        }
+        return result;
+    }
+
+    private double[] multiplyMatrixVector(double[][] matrix, double[] vector) {
+        int rows = matrix.length;
+        int cols = matrix[0].length;
+        double[] result = new double[rows];
+
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                result[i] += matrix[i][j] * vector[j];
+            }
+        }
+        return result;
+    }
+
+    private double[][] invertMatrix(double[][] matrix) {
+        int n = matrix.length;
+        double[][] identity = new double[n][n];
+        for (int i = 0; i < n; i++) {
+            identity[i][i] = 1;
+        }
+
+        for (int i = 0; i < n; i++) {
+            int max = i;
+            for (int k = i + 1; k < n; k++) {
+                if (Math.abs(matrix[k][i]) > Math.abs(matrix[max][i])) {
+                    max = k;
+                }
+            }
+
+            double[] temp = matrix[i];
+            matrix[i] = matrix[max];
+            matrix[max] = temp;
+
+            temp = identity[i];
+            identity[i] = identity[max];
+            identity[max] = temp;
+
+            // Verificar si la matriz es singular
+            if (Math.abs(matrix[i][i]) <= 1e-10) {
+                throw new ArithmeticException("La matriz es singular."); // No se puede invertir
+            }
+
+            double factor = matrix[i][i]; 
+            for (int j = 0; j < n; j++) { 
+                matrix[i][j] /= factor;
+                identity[i][j] /= factor;
+            }
+
+            for (int k = 0; k < n; k++) { 
+                if (k != i) {
+                    factor = matrix[k][i];
+                    for (int j = 0; j < n; j++) {
+                        matrix[k][j] -= factor * matrix[i][j];
+                        identity[k][j] -= factor * identity[i][j];
+                    }
+                }
+            }
+        }
+
+        return identity;
     }
 }

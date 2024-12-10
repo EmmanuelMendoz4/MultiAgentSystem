@@ -82,9 +82,9 @@ public class SearchAgent extends Agent {
         public void action() {
             // Definir el conjunto de datos
             DataSet data = new DataSet(
-                    new double[]{1,2,3}, // x o x1 Para regresiones simples y polinomiales
-                    new double[]{4,5,6}, // x2 (solo para regresión múltiple)
-                    new double[]{5,10,15} // y
+                    new double[]{1, 2, 3, 4}, // x o x1 Para regresiones simples y polinomiales
+                    new double[]{}, // x2 (solo para regresión múltiple)
+                    new double[]{2, 4, 6, 8}  // y
             );
 
             // Buscar agentes de clasificación
