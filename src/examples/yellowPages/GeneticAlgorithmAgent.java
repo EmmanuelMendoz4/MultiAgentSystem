@@ -158,15 +158,15 @@ public class GeneticAlgorithmAgent extends Agent {
 
                 // Procesar datos recibidos
                 JSONObject json = new JSONObject(msg.getContent());
-                JSONArray xArray = json.getJSONArray("x1");
+                JSONArray xArray = json.has("x") ? json.getJSONArray("x") : json.getJSONArray("x1");
                 JSONArray yArray = json.getJSONArray("y");
                 
                 double[] x = parseJsonArray(xArray);
                 double[] y = parseJsonArray(yArray);
                 
                 //Comprobación de los valores recibidos
-                System.out.println("Valores recibidos para x: " + Arrays.toString(x));
-                System.out.println("Valores recibidos para y: " + Arrays.toString(y));
+                //System.out.println("Valores recibidos para x: " + Arrays.toString(x));
+                //System.out.println("Valores recibidos para y: " + Arrays.toString(y));
                  
                 
                 Data data = new Data(x, y);

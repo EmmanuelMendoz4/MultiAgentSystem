@@ -89,7 +89,7 @@ public class ServiceAgent extends Agent {
             double correlationX1 = calculatePearsonCorrelation(x1, y);
             double correlationX2 = calculatePearsonCorrelation(x2, y);
 
-            System.out.println("Correlaciones (Múltiple): X1=" + correlationX1 + ", X2=" + correlationX2);
+            System.out.println("Correlaciones (Múltiple): X1 = " + correlationX1 + ", X2 = " + correlationX2);
 
             if (Math.abs(correlationX1) > 0.7 && Math.abs(correlationX2) > 0.7) {
                 return "Multiple Linear Regression";

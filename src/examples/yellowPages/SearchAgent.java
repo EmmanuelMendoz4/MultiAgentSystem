@@ -11,6 +11,8 @@ import jade.core.behaviours.OneShotBehaviour;
 import org.json.JSONObject;
 import org.json.JSONArray;
 
+import java.util.Arrays;
+
 public class SearchAgent extends Agent {
 
     public class DataSet {
@@ -82,9 +84,9 @@ public class SearchAgent extends Agent {
         public void action() {
             // Definir el conjunto de datos
             DataSet data = new DataSet(
-                    new double[]{1, 2, 3, 4}, // x o x1 Para regresiones simples y polinomiales
+                    new double[]{1,2,3,4,5,6,7,8,9}, // x o x1 Para regresiones simples y polinomiales
                     new double[]{}, // x2 (solo para regresión múltiple)
-                    new double[]{2, 4, 6, 8}  // y
+                    new double[]{2,4,6,8,10,12,14,16,18}  // y
             );
 
             // Buscar agentes de clasificación
@@ -154,14 +156,20 @@ public class SearchAgent extends Agent {
                                 if (geneticAgent != null) {
                                     ACLMessage geneticRequest = new ACLMessage(ACLMessage.REQUEST);
                                     geneticRequest.addReceiver(geneticAgent);
-                                    geneticRequest.setContent(serializeVariablesToJson(data));
+                                    String jsonData = serializeVariablesToJson(data);
+                                    geneticRequest.setContent(jsonData);
                                     geneticRequest.setConversationId("genetic-analysis");
+                                    System.out.println("Enviando datos al agente genético: " + jsonData);
                                     send(geneticRequest);
 
                                     ACLMessage geneticReply = blockingReceive();
                                     if (geneticReply != null && geneticReply.getPerformative() == ACLMessage.INFORM) {
                                         System.out.println("Parámetros optimizados recibidos: " + geneticReply.getContent());
                                         double[] geneticCoefficients = extractCoefficientsFromJson(geneticReply.getContent());
+
+                                        // Agregar mensajes de depuración antes de llamar a compareModels
+                                        System.out.println("Datos para comparar modelos - x: " + Arrays.toString(data.x));
+                                        System.out.println("Datos para comparar modelos - y: " + Arrays.toString(data.y));
 
                                         // Comparar modelos
                                         compareModels(coefficients, geneticCoefficients, data.x, data.y);
@@ -201,6 +209,14 @@ public class SearchAgent extends Agent {
             }
             if (geneticCoefficients == null) {
                 System.out.println("Error: Los coeficientes genéticos recibidos son nulos.");
+                return;
+            }
+            if (x == null) {
+                System.out.println("Error: Los datos de x son nulos.");
+                return;
+            }
+            if (y == null) {
+                System.out.println("Error: Los datos de y son nulos.");
                 return;
             }
 
@@ -266,11 +282,30 @@ public class SearchAgent extends Agent {
         return coefficients;
     }
 
+    private DataSet extractDataSetFromJson(String jsonContent) {
+        JSONObject jsonObject = new JSONObject(jsonContent);
+        JSONArray xArray = jsonObject.getJSONArray("x");
+        JSONArray yArray = jsonObject.getJSONArray("y");
+
+        double[] x = new double[xArray.length()];
+        double[] y = new double[yArray.length()];
+
+        for (int i = 0; i < xArray.length(); i++) {
+            x[i] = xArray.getDouble(i);
+        }
+
+        for (int i = 0; i < yArray.length(); i++) {
+            y[i] = yArray.getDouble(i);
+        }
+
+        return new DataSet(x, y);
+    }
+
     // Convertir la data a formato json
     private String serializeVariablesToJson(DataSet data) {
         StringBuilder sb = new StringBuilder();
         sb.append("{");
-
+    
         if (data.x != null) {
             sb.append("\"x\": [");
             for (int i = 0; i < data.x.length; i++) {
@@ -281,7 +316,7 @@ public class SearchAgent extends Agent {
             }
             sb.append("], ");
         }
-
+    
         if (data.x1 != null) {
             sb.append("\"x1\": [");
             for (int i = 0; i < data.x1.length; i++) {
@@ -292,7 +327,7 @@ public class SearchAgent extends Agent {
             }
             sb.append("], ");
         }
-
+    
         if (data.x2 != null) {
             sb.append("\"x2\": [");
             for (int i = 0; i < data.x2.length; i++) {
@@ -303,7 +338,7 @@ public class SearchAgent extends Agent {
             }
             sb.append("], ");
         }
-
+    
         sb.append("\"y\": [");
         for (int i = 0; i < data.y.length; i++) {
             sb.append(data.y[i]);
@@ -311,8 +346,9 @@ public class SearchAgent extends Agent {
                 sb.append(", ");
             }
         }
-        sb.append("] }"); // Asegura que el JSON termine con "}"
-
+        sb.append("] }"); 
+    
         return sb.toString();
     }
+    
 }
